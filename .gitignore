@@ -1,0 +1,7 @@
+public/images/
+logs/
+.env
+venv/
+__pycache__/
+*.pyc
+public/feeds/*.xml
