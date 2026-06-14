@@ -26,7 +26,11 @@ RSS_SOURCES = {
     "health":        ["https://rss.medicalnewstoday.com/featurednews.xml"],
     "science":       ["https://www.sciencedaily.com/rss/all.xml"],
     "entertainment": ["https://variety.com/feed/", "https://deadline.com/feed/"],
-    "local":         ["https://feeds.feedburner.com/baltimoresun/news"],
+    "local":         [
+        "https://news.google.com/rss/search?q=Baltimore+Maryland+news&hl=en-US&gl=US&ceid=US:en",
+        "https://news.google.com/rss/search?q=Baltimore+crime+community&hl=en-US&gl=US&ceid=US:en",
+        "https://news.google.com/rss/search?q=Maryland+news+today&hl=en-US&gl=US&ceid=US:en",
+    ],
     "world":         ["https://feeds.bbci.co.uk/news/world/rss.xml"],
     "us":            ["https://feeds.bbci.co.uk/news/world/us_and_canada/rss.xml"],
 }
@@ -44,11 +48,29 @@ def ai_rewrite(title, summary, vertical, dry_run=False):
     clean = lambda s: re.sub(r'[^\w\s\.\,\-\!\?]', ' ', str(s)).strip()
     safe_title   = clean(title)[:80]
     safe_summary = clean(summary)[:300]
+    # Build a decent fallback article even without Groq
+    sentences = [s.strip() for s in safe_summary.replace('!','.').replace('?','.').split('.') if len(s.strip()) > 20]
+    if len(sentences) >= 2:
+        fallback_body = (
+            "<p>" + safe_summary + "</p>"
+            "<p>This development marks a significant moment in the " + vertical + " sector. "
+            "Industry observers are closely monitoring the situation as it continues to unfold, "
+            "with potential implications for stakeholders across the board.</p>"
+            "<p>The story comes amid growing attention to " + vertical + " issues globally. "
+            "Experts suggest this could signal broader trends that warrant careful consideration "
+            "by both professionals and the general public alike.</p>"
+            "<p>Further details are expected to emerge in the coming hours and days. "
+            "VoltixIO NewsFeed will continue to monitor this story and provide updates "
+            "as new information becomes available from official sources.</p>"
+        )
+    else:
+        fallback_body = "<p>" + safe_summary + "</p>"
+
     fallback = {
         "title":        safe_title,
         "summary":      safe_summary[:200],
-        "body":         "<p>" + safe_summary + "</p>",
-        "image_prompt": "editorial news photograph " + safe_title[:50] + " cinematic lighting"
+        "body":         fallback_body,
+        "image_query":  vertical + " news " + safe_title.split()[0] if safe_title else "news"
     }
     if dry_run:
         return fallback
@@ -57,42 +79,80 @@ def ai_rewrite(title, summary, vertical, dry_run=False):
         log.warning("GROQ_KEY not set - using original text")
         return fallback
     prompt = (
-        "You are a news journalist. Rewrite this article.\n"
+        "You are a senior journalist writing for VoltixIO NewsFeed. Write a full news article.\n"
         "Headline: " + safe_title + "\n"
         "Summary: " + safe_summary + "\n\n"
-        "Respond with ONLY a JSON object, no explanation, no markdown:\n"
-        '{"title":"improved headline under 90 chars",'
-        '"summary":"two sentence summary",'
-        '"body":"<p>article body 200 words</p>",'
-        '"image_prompt":"photorealistic editorial photograph cinematic 16x9 no text"}'
+        "Write a detailed, insightful article with 4-5 paragraphs covering:\n"
+        "- What happened and why it matters\n"
+        "- Key details, numbers, names, context\n"
+        "- Background and implications\n"
+        "- What happens next or what readers should watch\n\n"
+        "Respond with ONLY this JSON, no markdown, no explanation:\n"
+        '{"title":"compelling headline under 90 chars","summary":"2 sentence summary","body":"<p>paragraph 1</p><p>paragraph 2</p><p>paragraph 3</p><p>paragraph 4</p><p>paragraph 5</p>","image_query":"3 specific keywords describing the visual scene of this story"}'
     )
+    # Try Ollama first (local, no rate limits)
+    try:
+        r_ollama = requests.post(
+            "http://localhost:11434/api/chat",
+            headers={"Content-Type": "application/json"},
+            json={
+                "model":   "llama3.2",
+                "messages": [{"role": "user", "content": prompt}],
+                "stream":  False,
+                "options": {"temperature": 0.3, "num_predict": 600}
+            },
+            timeout=60
+        )
+        r_ollama.raise_for_status()
+        raw_ollama = r_ollama.json().get("message", {}).get("content", "").strip()
+        raw_ollama = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", raw_ollama)
+        raw_ollama = re.sub(r"^```[a-z]*\n?", "", raw_ollama)
+        raw_ollama = re.sub(r"\n?```$", "", raw_ollama).strip()
+        result_ollama = json.loads(raw_ollama)
+        for k in ("title", "summary", "body"):
+            if k not in result_ollama:
+                result_ollama[k] = fallback[k]
+        log.info("Ollama rewrite OK: " + result_ollama["title"][:50])
+        return result_ollama
+    except Exception as e_ollama:
+        log.warning("Ollama failed (" + str(e_ollama) + ") - trying Groq")
+
+    # Fallback: Groq API
+    groq_key = os.environ.get("GROQ_KEY", "")
+    if not groq_key:
+        return fallback
     try:
         r = requests.post(
             "https://api.groq.com/openai/v1/chat/completions",
-            headers={
-                "Authorization": "Bearer " + groq_key,
-                "Content-Type": "application/json"
-            },
+            headers={"Authorization": "Bearer " + groq_key, "Content-Type": "application/json"},
             json={
-                "model":       "llama-3.1-8b-instant",
-                "messages":    [{"role": "user", "content": prompt}],
-                "temperature": 0.5,
-                "max_tokens":  600
+                "model":   "llama-3.1-8b-instant",
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.3,
+                "max_tokens": 800
             },
-            timeout=15
+            timeout=20
         )
         r.raise_for_status()
         raw = r.json()["choices"][0]["message"]["content"].strip()
         raw = re.sub(r'^```[a-z]*\n?', '', raw)
         raw = re.sub(r'\n?```$', '', raw).strip()
+        # Strip control characters that break JSON parsing
+        import re as _re2
+        raw = _re2.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', raw)
+        # Remove control characters that break JSON
+        import re as _re
+        raw = _re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', raw)
+        # Fix common unicode chars that break JSON
+        raw = raw.replace('\u2019',"'").replace('\u2018',"'").replace('\u201c','"').replace('\u201d','"').replace('\u2013','-').replace('\u2014','-')
         result = json.loads(raw)
-        for k in ("title", "summary", "body", "image_prompt"):
+        for k in ("title", "summary", "body"):
             if k not in result:
                 result[k] = fallback[k]
         log.info("Groq rewrite OK: " + result["title"][:50])
         return result
     except Exception as e:
-        log.warning("Groq failed (" + str(e) + ") - using original")
+        log.warning("Ollama failed (" + str(e) + ") - using original")
         return fallback
 
 
@@ -103,16 +163,35 @@ def generate_image(prompt, slug, dry_run=False):
         return BASE_URL + "/images/" + slug + ".jpg"
     if dry_run:
         return BASE_URL + "/images/placeholder.jpg"
-    seed_val = abs(hash(slug)) % 1000
-    url = "https://picsum.photos/seed/" + str(seed_val) + "/1200/630"
+
+    import re as _re
+    clean = _re.sub(r"[^a-zA-Z0-9\s]", " ", str(prompt)).strip()
+    words = [w for w in clean.split() if len(w) > 3][:3]
+    query = ",".join(words) if words else "news,world"
+
+    # Primary: LoremFlickr - topic-relevant real photos, free, no API key
     try:
-        r = requests.get(url, timeout=15, allow_redirects=True)
-        r.raise_for_status()
-        img_path.write_bytes(r.content)
-        log.info("Image saved: " + slug + ".jpg (" + str(len(r.content)//1024) + "KB)")
-        return BASE_URL + "/images/" + slug + ".jpg"
+        url_lf = "https://loremflickr.com/1200/630/" + query
+        r_lf = requests.get(url_lf, timeout=20, allow_redirects=True)
+        r_lf.raise_for_status()
+        if len(r_lf.content) > 10000:
+            img_path.write_bytes(r_lf.content)
+            log.info("Image saved (flickr/" + query + "): " + slug + ".jpg (" + str(len(r_lf.content)//1024) + "KB)")
+            return BASE_URL + "/images/" + slug + ".jpg"
     except Exception as e:
-        log.warning("Image failed " + slug + ": " + str(e))
+        log.warning("LoremFlickr failed (" + str(e) + ") trying Picsum")
+
+    # Fallback: Picsum
+    try:
+        seed_val = abs(hash(slug)) % 1000
+        url2 = "https://picsum.photos/seed/" + str(seed_val) + "/1200/630"
+        r2 = requests.get(url2, timeout=15, allow_redirects=True)
+        r2.raise_for_status()
+        img_path.write_bytes(r2.content)
+        log.info("Image saved (picsum): " + slug + ".jpg")
+        return BASE_URL + "/images/" + slug + ".jpg"
+    except Exception as e2:
+        log.warning("Image failed " + slug + ": " + str(e2))
         return BASE_URL + "/images/default.jpg"
 
 
@@ -132,7 +211,8 @@ def build_rss(vertical, items, filename):
             "\n      <dc:creator>VoltixIO AI</dc:creator>"
             "\n      <category>" + item.get("vertical", vertical) + "</category>"
             "\n      <description><![CDATA[" + item["summary"] + "]]></description>"
-            "\n      <content:encoded><![CDATA[<img src='" + item["image_url"] + "' style='width:100%;border-radius:8px;margin-bottom:16px'>" + item["body"] + "]]></content:encoded>"
+            "\n      <source_url><![CDATA[" + item.get("source_url","") + "]]></source_url>"
+            "\n      <content:encoded><![CDATA[<img src='" + item["image_url"] + "' style='width:100%;border-radius:8px;margin-bottom:16px'>" + item["body"] + "<p style='margin-top:20px;padding-top:16px;border-top:1px solid #222'><a href='" + item.get("source_url","#") + "' target='_blank' rel='noopener' style='color:#378ADD;font-weight:600'>Read original article &#8599;</a></p>]]></content:encoded>"
             "\n      <media:content url='" + item["image_url"] + "' medium='image' width='" + str(IMAGE_W) + "' height='" + str(IMAGE_H) + "' type='image/jpeg'/>"
             "\n    </item>"
         )
@@ -183,7 +263,8 @@ def process_vertical(vertical, dry_run=False):
                 pub = datetime.now(timezone.utc)
             log.info("Processing: " + raw_title[:60])
             ai  = ai_rewrite(raw_title, raw_summary, vertical, dry_run)
-            img = generate_image(ai.get("image_prompt", raw_title), slug, dry_run)
+            img_query = ai.get("image_query", ai.get("image_prompt", raw_title))
+            img = generate_image(img_query, slug, dry_run)
             items.append({
                 "slug":       slug,
                 "title":      ai["title"],
@@ -196,7 +277,7 @@ def process_vertical(vertical, dry_run=False):
             })
             if len(items) >= MAX_ITEMS:
                 break
-            time.sleep(2.0)
+            time.sleep(5.0)
         if len(items) >= MAX_ITEMS:
             break
     return items
