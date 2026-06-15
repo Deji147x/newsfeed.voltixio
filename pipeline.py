@@ -53,15 +53,21 @@ def ai_rewrite(title, summary, vertical, dry_run=False):
     if len(sentences) >= 2:
         fallback_body = (
             "<p>" + safe_summary + "</p>"
-            "<p>This development marks a significant moment in the " + vertical + " sector. "
-            "Industry observers are closely monitoring the situation as it continues to unfold, "
-            "with potential implications for stakeholders across the board.</p>"
-            "<p>The story comes amid growing attention to " + vertical + " issues globally. "
-            "Experts suggest this could signal broader trends that warrant careful consideration "
-            "by both professionals and the general public alike.</p>"
-            "<p>Further details are expected to emerge in the coming hours and days. "
-            "VoltixIO NewsFeed will continue to monitor this story and provide updates "
-            "as new information becomes available from official sources.</p>"
+            "<p>This development represents a notable shift in the " + vertical + " landscape. "
+            "Analysts and industry watchers are paying close attention as new details continue "
+            "to emerge. The broader implications for consumers, businesses, and policymakers "
+            "remain to be seen, but early indicators suggest this story will have lasting "
+            "relevance across multiple sectors.</p>"
+            "<p>Context matters here. The " + vertical + " sector has seen significant activity "
+            "in recent months, with organizations and individuals adapting to rapidly changing "
+            "conditions. This latest development fits into a larger pattern of transformation "
+            "that experts have been tracking carefully. Stakeholders from government, industry, "
+            "and civil society are all expected to respond in the coming days.</p>"
+            "<p>Looking ahead, observers will be watching closely for follow-up actions, "
+            "official statements, and data that could shed more light on the full scope of "
+            "this story. VoltixIO NewsFeed will continue tracking this developing situation "
+            "and delivering updates as they become available from verified sources. "
+            "Readers are encouraged to check back for the latest reporting.</p>"
         )
     else:
         fallback_body = "<p>" + safe_summary + "</p>"
@@ -157,42 +163,8 @@ def ai_rewrite(title, summary, vertical, dry_run=False):
 
 
 def generate_image(prompt, slug, dry_run=False):
-    IMAGES_DIR.mkdir(parents=True, exist_ok=True)
-    img_path = IMAGES_DIR / (slug + ".jpg")
-    if img_path.exists():
-        return BASE_URL + "/images/" + slug + ".jpg"
-    if dry_run:
-        return BASE_URL + "/images/placeholder.jpg"
-
-    import re as _re
-    clean = _re.sub(r"[^a-zA-Z0-9\s]", " ", str(prompt)).strip()
-    words = [w for w in clean.split() if len(w) > 3][:3]
-    query = ",".join(words) if words else "news,world"
-
-    # Primary: LoremFlickr - topic-relevant real photos, free, no API key
-    try:
-        url_lf = "https://loremflickr.com/1200/630/" + query
-        r_lf = requests.get(url_lf, timeout=20, allow_redirects=True)
-        r_lf.raise_for_status()
-        if len(r_lf.content) > 10000:
-            img_path.write_bytes(r_lf.content)
-            log.info("Image saved (flickr/" + query + "): " + slug + ".jpg (" + str(len(r_lf.content)//1024) + "KB)")
-            return BASE_URL + "/images/" + slug + ".jpg"
-    except Exception as e:
-        log.warning("LoremFlickr failed (" + str(e) + ") trying Picsum")
-
-    # Fallback: Picsum
-    try:
-        seed_val = abs(hash(slug)) % 1000
-        url2 = "https://picsum.photos/seed/" + str(seed_val) + "/1200/630"
-        r2 = requests.get(url2, timeout=15, allow_redirects=True)
-        r2.raise_for_status()
-        img_path.write_bytes(r2.content)
-        log.info("Image saved (picsum): " + slug + ".jpg")
-        return BASE_URL + "/images/" + slug + ".jpg"
-    except Exception as e2:
-        log.warning("Image failed " + slug + ": " + str(e2))
-        return BASE_URL + "/images/default.jpg"
+    # Images disabled until proper solution implemented
+    return BASE_URL + '/images/placeholder.jpg'
 
 
 def build_rss(vertical, items, filename):
@@ -294,8 +266,21 @@ def run(target=None, dry_run=False):
         if items:
             build_rss(v, items, v + ".xml")
             all_items.extend(items)
-    sorted_items = sorted(all_items, key=lambda x: x["pub_date"], reverse=True)
-    build_rss("all", sorted_items[:60], "uglyfeed.xml")
+    # Balance: take up to 5 articles per vertical, then fill remainder by recency
+    from collections import defaultdict
+    per_vert = defaultdict(list)
+    for item in sorted(all_items, key=lambda x: x["pub_date"], reverse=True):
+        per_vert[item["vertical"]].append(item)
+    balanced = []
+    # First pass: up to 5 per vertical
+    for v_items in per_vert.values():
+        balanced.extend(v_items[:5])
+    # Second pass: fill to 120 by recency from remaining
+    used = set(id(i) for i in balanced)
+    remainder = [i for i in sorted(all_items, key=lambda x: x["pub_date"], reverse=True) if id(i) not in used]
+    balanced.extend(remainder[:120-len(balanced)])
+    balanced = sorted(balanced, key=lambda x: x["pub_date"], reverse=True)[:120]
+    build_rss("all", balanced, "uglyfeed.xml")
     log.info("=== Done: " + str(len(all_items)) + " articles in " + str(round(time.time()-t0, 1)) + "s ===")
 
 

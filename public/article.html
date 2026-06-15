@@ -45,7 +45,7 @@ header{background:rgba(6,10,18,.95);backdrop-filter:blur(16px);border-bottom:1px
 .art-title{font-size:clamp(20px,4vw,32px);font-weight:700;color:var(--text);line-height:1.25;letter-spacing:-.4px;margin-bottom:14px}
 .art-meta{display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:12px;font-family:var(--mono);color:var(--text3);margin-bottom:18px;padding-bottom:14px;border-bottom:1px solid var(--border)}
 .breaking{background:rgba(226,75,74,.12);border:1px solid rgba(226,75,74,.35);color:var(--red);border-radius:4px;padding:2px 8px;font-size:10px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;animation:pulse 2s ease-in-out infinite}
-.art-hero{width:100%;border-radius:var(--rl);overflow:hidden;margin-bottom:22px;position:relative}
+.art-hero{display:none;width:100%;border-radius:var(--rl);overflow:hidden;margin-bottom:22px;position:relative}
 .art-hero img{width:100%;max-height:460px;object-fit:cover;display:block}
 .art-hero-caption{position:absolute;bottom:0;left:0;right:0;background:linear-gradient(to top,rgba(6,10,18,.8),transparent);padding:10px 14px;font-size:10px;font-family:var(--mono);color:rgba(232,237,245,.6)}
 .art-body{font-size:16px;line-height:1.85;color:var(--text2)}
@@ -110,6 +110,19 @@ footer{background:var(--bg2);border-top:1px solid var(--border);margin-top:40px;
 .not-found{text-align:center;padding:60px 24px;color:var(--text3)}
 .not-found h2{font-size:22px;color:var(--text);margin-bottom:10px}
 </style>
+<script async type="application/javascript"
+        src="https://news.google.com/swg/js/v1/swg-basic.js"></script>
+<script>
+  (self.SWG_BASIC = self.SWG_BASIC || []).push( basicSubscriptions => {
+    basicSubscriptions.init({
+      type: "NewsArticle",
+      isPartOfType: ["Product"],
+      isPartOfProductId: "CAow6dzgCw:openaccess",
+      clientOptions: { theme: "light", lang: "en" },
+    });
+  });
+</script>
+<script charset="utf-8" type="text/javascript" src="//js-na2.hsforms.net/forms/embed/v2.js"></script>
 </head>
 <body>
 
@@ -200,7 +213,7 @@ var exitShown=false;
 
 function getSlug(){var m=window.location.pathname.match(/\/article\/(.+)/);return m?m[1]:null;}
 function showToast(msg){var t=document.getElementById("toast"),tm=document.getElementById("toastMsg");if(!t||!tm)return;tm.textContent=msg;t.classList.add("show");setTimeout(function(){t.classList.remove("show");},4000);}
-function submitHS(email,src){var P="YOUR_PORTAL_ID",F="YOUR_FORM_GUID";fetch("https://api.hsforms.com/submissions/v3/integration/submit/"+P+"/"+F,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({fields:[{name:"email",value:email},{name:"lifecyclestage",value:"subscriber"},{name:"hs_lead_source",value:"newsfeed.voltixio.com/"+src}],context:{pageUri:window.location.href,pageName:document.title}})}).then(function(){showToast("Subscribed! First briefing tomorrow.");}).catch(function(){showToast("Subscribed! (Add HubSpot IDs to activate)");});}
+function submitHS(email,src){var P="246470735",F="c78d6859-7418-4f6e-ba04-6078c4524758";fetch("https://api.hsforms.com/submissions/v3/integration/submit/"+P+"/"+F,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({fields:[{name:"email",value:email},{name:"lifecyclestage",value:"subscriber"},{name:"hs_lead_source",value:"newsfeed.voltixio.com/"+src}],context:{pageUri:window.location.href,pageName:document.title}})}).then(function(){showToast("Subscribed! First briefing tomorrow.");}).catch(function(){showToast("Subscribed! (Add HubSpot IDs to activate)");});}
 function closeExit(){document.getElementById("exitPopup").classList.remove("open");sessionStorage.setItem("exitSeen","1");}
 function showExit(){if(exitShown||sessionStorage.getItem("exitSeen"))return;exitShown=true;document.getElementById("exitPopup").classList.add("open");}
 document.addEventListener("mouseleave",function(e){if(e.clientY<50)showExit();});

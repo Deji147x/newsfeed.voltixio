@@ -182,10 +182,10 @@ nav{max-width:1400px;margin:0 auto;padding:0 24px;display:flex}
 /* ── FEATURED ── */
 .featured-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);overflow:hidden;margin-bottom:22px;cursor:pointer;transition:border-color .2s;animation:fadeUp .4s ease}
 .featured-card:hover{border-color:var(--border2)}
-.feat-img{width:100%;height:300px;background:var(--surface2);position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center}
+.feat-img{display:none;width:100%;height:300px;background:var(--surface2);position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center}
 .feat-img img{width:100%;height:100%;object-fit:cover;transition:transform .4s}
 .featured-card:hover .feat-img img{transform:scale(1.02)}
-.ai-stamp{position:absolute;top:12px;left:12px;background:rgba(55,138,221,.15);border:1px solid rgba(55,138,221,.4);border-radius:20px;padding:3px 10px;font-size:10px;font-family:var(--mono);color:var(--accent)}
+.ai-stamp{display:none;position:absolute;top:12px;left:12px;background:rgba(55,138,221,.15);border:1px solid rgba(55,138,221,.4);border-radius:20px;padding:3px 10px;font-size:10px;font-family:var(--mono);color:var(--accent)}
 .vtag{position:absolute;top:12px;right:12px;border-radius:5px;padding:3px 9px;font-size:10px;font-family:var(--mono);font-weight:600}
 .feat-body{padding:20px}
 .feat-meta{display:flex;align-items:center;gap:10px;margin-bottom:10px;font-size:11px;color:var(--text3);font-family:var(--mono)}
@@ -202,7 +202,7 @@ nav{max-width:1400px;margin:0 auto;padding:0 24px;display:flex}
 .article-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:16px;margin-bottom:26px}
 .article-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);overflow:hidden;cursor:pointer;transition:border-color .18s,transform .15s;animation:fadeUp .4s ease}
 .article-card:hover{border-color:var(--border2);transform:translateY(-2px)}
-.card-img{width:100%;height:158px;background:var(--surface2);position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center}
+.card-img{display:none;width:100%;height:158px;background:var(--surface2);position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center}
 .card-img img{width:100%;height:100%;object-fit:cover;transition:transform .35s}
 .article-card:hover .card-img img{transform:scale(1.03)}
 .card-img-skeleton{width:100%;height:100%;background:linear-gradient(90deg,var(--surface2) 25%,var(--surface) 50%,var(--surface2) 75%);background-size:400px 100%;animation:shimmer 1.5s infinite}
@@ -295,6 +295,19 @@ footer{background:var(--bg2);border-top:1px solid var(--border);margin-top:16px}
 }
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
 </style>
+<script async type="application/javascript"
+        src="https://news.google.com/swg/js/v1/swg-basic.js"></script>
+<script>
+  (self.SWG_BASIC = self.SWG_BASIC || []).push( basicSubscriptions => {
+    basicSubscriptions.init({
+      type: "NewsArticle",
+      isPartOfType: ["Product"],
+      isPartOfProductId: "CAow6dzgCw:openaccess",
+      clientOptions: { theme: "light", lang: "en" },
+    });
+  });
+</script>
+<script charset="utf-8" type="text/javascript" src="//js-na2.hsforms.net/forms/embed/v2.js"></script>
 </head>
 <body>
 
@@ -763,7 +776,7 @@ function openModal()  { var m=document.getElementById('modal'); if(m) m.classLis
 function closeModal() { var m=document.getElementById('modal'); if(m) m.classList.remove('open'); }
 
 function submitHS(email) {
-  var P='YOUR_PORTAL_ID', F='YOUR_FORM_GUID';
+  var P='246470735', F='c78d6859-7418-4f6e-ba04-6078c4524758';
   fetch('https://api.hsforms.com/submissions/v3/integration/submit/'+P+'/'+F,{
     method:'POST', headers:{'Content-Type':'application/json'},
     body:JSON.stringify({fields:[{name:'email',value:email},{name:'lifecyclestage',value:'subscriber'},{name:'hs_lead_source',value:'newsfeed.voltixio.com'}],context:{pageUri:window.location.href,pageName:'VoltixIO NewsFeed'}})
