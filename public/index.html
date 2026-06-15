@@ -182,7 +182,7 @@ nav{max-width:1400px;margin:0 auto;padding:0 24px;display:flex}
 /* ── FEATURED ── */
 .featured-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);overflow:hidden;margin-bottom:22px;cursor:pointer;transition:border-color .2s;animation:fadeUp .4s ease}
 .featured-card:hover{border-color:var(--border2)}
-.feat-img{display:none;width:100%;height:300px;background:var(--surface2);position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center}
+.feat-img{width:100%;height:300px;background:var(--surface2);position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center}
 .feat-img img{width:100%;height:100%;object-fit:cover;transition:transform .4s}
 .featured-card:hover .feat-img img{transform:scale(1.02)}
 .ai-stamp{display:none;position:absolute;top:12px;left:12px;background:rgba(55,138,221,.15);border:1px solid rgba(55,138,221,.4);border-radius:20px;padding:3px 10px;font-size:10px;font-family:var(--mono);color:var(--accent)}
@@ -202,7 +202,7 @@ nav{max-width:1400px;margin:0 auto;padding:0 24px;display:flex}
 .article-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:16px;margin-bottom:26px}
 .article-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);overflow:hidden;cursor:pointer;transition:border-color .18s,transform .15s;animation:fadeUp .4s ease}
 .article-card:hover{border-color:var(--border2);transform:translateY(-2px)}
-.card-img{display:none;width:100%;height:158px;background:var(--surface2);position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center}
+.card-img{width:100%;height:158px;background:var(--surface2);position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center}
 .card-img img{width:100%;height:100%;object-fit:cover;transition:transform .35s}
 .article-card:hover .card-img img{transform:scale(1.03)}
 .card-img-skeleton{width:100%;height:100%;background:linear-gradient(90deg,var(--surface2) 25%,var(--surface) 50%,var(--surface2) 75%);background-size:400px 100%;animation:shimmer 1.5s infinite}
@@ -646,7 +646,7 @@ function renderFeatured() {
 
   var imgWrap = document.createElement('div'); imgWrap.className = 'feat-img';
   imgWrap.appendChild(makeImg(imgUrl(a), a.title));
-  var stamp = document.createElement('span'); stamp.className='ai-stamp'; stamp.textContent='AI image'; imgWrap.appendChild(stamp);
+  var stamp = document.createElement('span'); stamp.className='ai-stamp'; stamp.textContent=''; imgWrap.appendChild(stamp);
   var vtag = document.createElement('span'); vtag.className='vtag '+v.cls; vtag.textContent=v.label; imgWrap.appendChild(vtag);
 
   var body = document.createElement('div'); body.className='feat-body';
@@ -682,7 +682,7 @@ function renderCard(a) {
 
   var iw=document.createElement('div'); iw.className='card-img';
   iw.appendChild(makeImg(imgUrl(a), a.title));
-  var badge=document.createElement('span'); badge.className='ai-badge-sm" style="display:none'; badge.textContent='AI'; iw.appendChild(badge);
+  var badge=document.createElement('span'); badge.className='ai-badge-sm" style="display:none'; badge.style.display='none'; iw.appendChild(badge);
 
   var bd=document.createElement('div'); bd.className='card-body';
   var vert=document.createElement('span'); vert.className='card-vert '+v.cls; vert.textContent=v.label;
@@ -690,7 +690,7 @@ function renderCard(a) {
   var dsc=document.createElement('div'); dsc.className='card-desc'; dsc.textContent=a.desc;
   var mt=document.createElement('div'); mt.className='card-meta';
   var tm=document.createElement('span'); tm.textContent=a.time; mt.appendChild(tm);
-  var ai=document.createElement('span'); ai.className='ai-img-note'; ai.textContent='AI image'; mt.appendChild(ai);
+  var ai=document.createElement('span'); ai.className='ai-img-note'; ai.textContent=''; mt.appendChild(ai);
   bd.appendChild(vert); bd.appendChild(ttl); bd.appendChild(dsc); bd.appendChild(mt);
   card.appendChild(iw); card.appendChild(bd);
   return card;
