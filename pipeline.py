@@ -198,21 +198,22 @@ def generate_image(prompt, slug, dry_run=False):
     if dry_run:
         return BASE_URL + "/images/placeholder.jpg"
 
-    hf_token = os.environ.get("HF_TOKEN", "")
-
-    # Primary: FLUX.1-merged on HuggingFace Spaces - unique AI image per article
-    if hf_token:
-        try:
-            import shutil
-            flux_prompt = "photorealistic editorial news photograph, " + str(prompt)[:200] + ", cinematic lighting, high quality"
-            client = get_flux_client(hf_token)
-            result = client.predict(prompt=flux_prompt, api_name="/infer")
-            tmp_path = result[0]
-            shutil.copy(tmp_path, str(img_path))
-            log.info("Image saved (FLUX): " + slug + ".jpg (" + str(img_path.stat().st_size//1024) + "KB)")
+    # LoremFlickr with topic-relevant keywords from article title
+    import re as _re
+    clean = _re.sub(r"[^a-zA-Z0-9\s]", " ", str(prompt)).strip()
+    stopwords = {"the","and","for","that","with","this","from","have","will","been","they","what","when","your","after"}
+    words = [w for w in clean.lower().split() if len(w) > 4 and w not in stopwords][:3]
+    query = ",".join(words) if words else "news,world"
+    try:
+        url_lf = "https://loremflickr.com/1200/630/" + query
+        r_lf = requests.get(url_lf, timeout=20, allow_redirects=True)
+        r_lf.raise_for_status()
+        if len(r_lf.content) > 10000:
+            img_path.write_bytes(r_lf.content)
+            log.info("Image saved (flickr/" + query + "): " + slug + ".jpg")
             return BASE_URL + "/images/" + slug + ".jpg"
-        except Exception as e:
-            log.warning("FLUX failed (" + str(e)[:80] + ") - trying Picsum")
+    except Exception as e:
+        log.warning("LoremFlickr failed: " + str(e))
 
     # Fallback: Picsum
     try:
@@ -326,6 +327,10 @@ def run(target=None, dry_run=False):
         if items:
             build_rss(v, items, v + ".xml")
             all_items.extend(items)
+            # Progressive update: refresh uglyfeed after each vertical
+            _sorted = sorted(all_items, key=lambda x: x["pub_date"], reverse=True)[:120]
+            build_rss("all", _sorted, "uglyfeed.xml")
+            log.info("uglyfeed updated: " + str(len(_sorted)) + " articles so far")
     # Balance: take up to 5 articles per vertical, then fill remainder by recency
     from collections import defaultdict
     per_vert = defaultdict(list)
