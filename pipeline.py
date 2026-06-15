@@ -107,7 +107,7 @@ def ai_rewrite(title, summary, vertical, dry_run=False):
                 "stream":  False,
                 "options": {"temperature": 0.3, "num_predict": 600}
             },
-            timeout=60
+            timeout=90
         )
         r_ollama.raise_for_status()
         raw_ollama = r_ollama.json().get("message", {}).get("content", "").strip()
@@ -162,6 +162,34 @@ def ai_rewrite(title, summary, vertical, dry_run=False):
         return fallback
 
 
+# FLUX client singleton - initialized once, reused for all articles
+_flux_client = None
+
+def get_flux_client(token):
+    global _flux_client
+    if _flux_client is None and token:
+        try:
+            from gradio_client import Client
+            _flux_client = Client("multimodalart/FLUX.1-merged", headers={"Authorization": "Bearer " + token})
+            log.info("FLUX client initialized")
+        except Exception as e:
+            log.warning("FLUX client init failed: " + str(e)[:80])
+    return _flux_client
+
+# FLUX client singleton - initialized once, reused for all articles
+_flux_client = None
+
+def get_flux_client(token):
+    global _flux_client
+    if _flux_client is None and token:
+        try:
+            from gradio_client import Client
+            _flux_client = Client("multimodalart/FLUX.1-merged", headers={"Authorization": "Bearer " + token})
+            log.info("FLUX client initialized")
+        except Exception as e:
+            log.warning("FLUX client init failed: " + str(e)[:80])
+    return _flux_client
+
 def generate_image(prompt, slug, dry_run=False):
     IMAGES_DIR.mkdir(parents=True, exist_ok=True)
     img_path = IMAGES_DIR / (slug + ".jpg")
@@ -170,27 +198,29 @@ def generate_image(prompt, slug, dry_run=False):
     if dry_run:
         return BASE_URL + "/images/placeholder.jpg"
 
-    import re as _re
-    clean = _re.sub(r"[^a-zA-Z0-9\s]", " ", str(prompt)).strip()
-    words = [w for w in clean.split() if len(w) > 3][:3]
-    query = ",".join(words) if words else "news,world"
+    hf_token = os.environ.get("HF_TOKEN", "")
 
-    try:
-        url_lf = "https://loremflickr.com/1200/630/" + query
-        r_lf = requests.get(url_lf, timeout=20, allow_redirects=True)
-        r_lf.raise_for_status()
-        if len(r_lf.content) > 10000:
-            img_path.write_bytes(r_lf.content)
-            log.info("Image saved (flickr/" + query + "): " + slug + ".jpg")
+    # Primary: FLUX.1-merged on HuggingFace Spaces - unique AI image per article
+    if hf_token:
+        try:
+            import shutil
+            flux_prompt = "photorealistic editorial news photograph, " + str(prompt)[:200] + ", cinematic lighting, high quality"
+            client = get_flux_client(hf_token)
+            result = client.predict(prompt=flux_prompt, api_name="/infer")
+            tmp_path = result[0]
+            shutil.copy(tmp_path, str(img_path))
+            log.info("Image saved (FLUX): " + slug + ".jpg (" + str(img_path.stat().st_size//1024) + "KB)")
             return BASE_URL + "/images/" + slug + ".jpg"
-    except Exception as e:
-        log.warning("LoremFlickr failed: " + str(e))
+        except Exception as e:
+            log.warning("FLUX failed (" + str(e)[:80] + ") - trying Picsum")
 
+    # Fallback: Picsum
     try:
         seed_val = abs(hash(slug)) % 1000
         r2 = requests.get("https://picsum.photos/seed/" + str(seed_val) + "/1200/630", timeout=15, allow_redirects=True)
         r2.raise_for_status()
         img_path.write_bytes(r2.content)
+        log.info("Image saved (picsum): " + slug + ".jpg")
         return BASE_URL + "/images/" + slug + ".jpg"
     except Exception as e2:
         log.warning("Image failed: " + str(e2))
