@@ -776,7 +776,7 @@ function openModal()  { var m=document.getElementById('modal'); if(m) m.classLis
 function closeModal() { var m=document.getElementById('modal'); if(m) m.classList.remove('open'); }
 
 function submitHS(email) {
-  var P='246470735', F='c78d6859-7418-4f6e-ba04-6078c4524758';
+  var P='246475541', F='93c564ae-28b0-4013-a07a-a685e51029f7';
   fetch('https://api.hsforms.com/submissions/v3/integration/submit/'+P+'/'+F,{
     method:'POST', headers:{'Content-Type':'application/json'},
     body:JSON.stringify({fields:[{name:'email',value:email},{name:'lifecyclestage',value:'subscriber'},{name:'hs_lead_source',value:'newsfeed.voltixio.com'}],context:{pageUri:window.location.href,pageName:'VoltixIO NewsFeed'}})
