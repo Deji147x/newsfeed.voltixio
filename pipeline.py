@@ -269,16 +269,18 @@ def get_flux_client(token):
     return _flux_client
 
 def fetch_og_image_url(article_url):
-    """Scrape og:image meta tag from the original article URL."""
+    """Scrape og:image meta tag from the original article URL, following redirects (Google News etc)."""
     if not article_url:
         return ""
     try:
-        import urllib.request as _ur, re as _re2
-        req = _ur.Request(article_url, headers={"User-Agent": "Mozilla/5.0 (compatible; VoltixIOBot/1.0)"})
-        with _ur.urlopen(req, timeout=4) as resp:
-            chunk = resp.read(40000).decode("utf-8", errors="ignore")
+        import re as _re2
+        # Use requests with redirect following (handles Google News redirect links)
+        resp = requests.get(article_url, timeout=6, allow_redirects=True,
+                             headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"})
+        chunk = resp.text[:60000]
         m = (_re2.search(r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\'](https?://[^"\'>\s]+)', chunk) or
-             _re2.search(r'<meta[^>]+content=["\'](https?://[^"\'>\s]+)[^>]+property=["\']og:image["\']', chunk))
+             _re2.search(r'<meta[^>]+content=["\'](https?://[^"\'>\s]+)[^>]+property=["\']og:image["\']', chunk) or
+             _re2.search(r'<meta[^>]+name=["\']twitter:image["\'][^>]+content=["\'](https?://[^"\'>\s]+)', chunk))
         if m:
             return m.group(1)
     except Exception:
@@ -286,7 +288,7 @@ def fetch_og_image_url(article_url):
     return ""
 
 
-def generate_image(prompt, slug, dry_run=False, article_url=None):
+def generate_image(prompt, slug, dry_run=False, article_url=None, vertical=None):
     IMAGES_DIR.mkdir(parents=True, exist_ok=True)
     img_path = IMAGES_DIR / (slug + ".jpg")
     if img_path.exists():
@@ -313,7 +315,13 @@ def generate_image(prompt, slug, dry_run=False, article_url=None):
     clean = _re.sub(r"[^a-zA-Z0-9\s]", " ", str(prompt)).strip()
     stopwords = {"the","and","for","that","with","this","from","have","will","been","they","what","when","your","after"}
     words = [w for w in clean.lower().split() if len(w) > 4 and w not in stopwords][:3]
-    query = ",".join(words) if words else "news,world"
+    if vertical == "local":
+        # Force Baltimore/Maryland relevance for Local vertical
+        query = "baltimore,maryland"
+        if words:
+            query = words[0] + ",baltimore"
+    else:
+        query = ",".join(words) if words else "news,world"
     try:
         url_lf = "https://loremflickr.com/1200/630/" + query
         r_lf = requests.get(url_lf, timeout=20, allow_redirects=True)
@@ -409,7 +417,7 @@ def process_vertical(vertical, dry_run=False):
             time.sleep(1.5)
             ai  = ai_rewrite(raw_title, raw_summary, vertical, dry_run)
             img_query = ai.get("image_query", ai.get("image_prompt", raw_title))
-            img = generate_image(img_query, slug, dry_run, article_url=raw_link)
+            img = generate_image(img_query, slug, dry_run, article_url=raw_link, vertical=vertical)
             items.append({
                 "slug":       slug,
                 "title":      ai["title"],
