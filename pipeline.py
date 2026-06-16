@@ -402,6 +402,9 @@ def process_vertical(vertical, dry_run=False):
         for entry in feed.entries[:8]:
             raw_title   = str(entry.get("title", "")).strip()
             raw_summary = re.sub(r'<[^>]+>', '', str(entry.get("summary", entry.get("description", "")))).strip()
+            import html as _html
+            raw_summary = _html.unescape(raw_summary)
+            raw_title = _html.unescape(raw_title)
             raw_link    = str(entry.get("link", "")).strip()
             if not raw_title or len(raw_title) < 10:
                 continue
