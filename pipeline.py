@@ -166,32 +166,45 @@ def ai_rewrite(title, summary, vertical, dry_run=False):
         "Respond with ONLY this JSON, no markdown, no explanation:\n"
         '{"title":"compelling headline under 90 chars","summary":"2 sentence summary","body":"<p>paragraph 1</p><p>paragraph 2</p><p>paragraph 3</p><p>paragraph 4</p><p>paragraph 5</p>","image_query":"3 specific keywords describing the visual scene of this story"}'
     )
-    # Try Ollama first (local, no rate limits)
-    try:
-        r_ollama = requests.post(
-            "http://localhost:11434/api/chat",
-            headers={"Content-Type": "application/json"},
-            json={
-                "model":   "llama3.2",
-                "messages": [{"role": "user", "content": prompt}],
-                "stream":  False,
-                "options": {"temperature": 0.3, "num_predict": 600}
-            },
-            timeout=90
-        )
-        r_ollama.raise_for_status()
-        raw_ollama = r_ollama.json().get("message", {}).get("content", "").strip()
-        raw_ollama = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", raw_ollama)
-        raw_ollama = re.sub(r"^```[a-z]*\n?", "", raw_ollama)
-        raw_ollama = re.sub(r"\n?```$", "", raw_ollama).strip()
-        result_ollama = json.loads(raw_ollama)
-        for k in ("title", "summary", "body"):
-            if k not in result_ollama:
-                result_ollama[k] = fallback[k]
-        log.info("Ollama rewrite OK: " + result_ollama["title"][:50])
-        return result_ollama
-    except Exception as e_ollama:
-        log.warning("Ollama failed (" + str(e_ollama) + ") - trying Groq")
+    # Primary: OpenRouter API (fast, free models, no CPU)
+    or_key = os.environ.get("OPENROUTER_KEY", "")
+    if or_key:
+        try:
+            r_or = requests.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers={
+                    "Authorization": "Bearer " + or_key,
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "https://newsfeed.voltixio.com",
+                    "X-Title": "VoltixIO NewsFeed"
+                },
+                json={
+                    "model": "google/gemma-4-31b-it:free",
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.3,
+                    "max_tokens": 1200
+                },
+                timeout=20
+            )
+            r_or.raise_for_status()
+            raw_or = r_or.json()["choices"][0]["message"]["content"].strip()
+            # Extract JSON object from response
+            _s = raw_or.find("{")
+            _e = raw_or.rfind("}") + 1
+            if _s >= 0 and _e > _s:
+                raw_or = raw_or[_s:_e]
+            raw_or = re.sub(r'^```[a-z]*\n?', '', raw_or)
+            raw_or = re.sub(r'\n?```$', '', raw_or).strip()
+            raw_or = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', raw_or)
+            raw_or = raw_or.replace('\u2019',"'").replace('\u2018',"'").replace('\u201c','"').replace('\u201d','"').replace('\u2013','-').replace('\u2014','-')
+            result_or = json.loads(raw_or)
+            for k in ("title", "summary", "body"):
+                if k not in result_or:
+                    result_or[k] = fallback[k]
+            log.info("OpenRouter rewrite OK: " + result_or["title"][:50])
+            return result_or
+        except Exception as e_or:
+            log.warning("OpenRouter failed (" + str(e_or)[:80] + ") - trying Groq")
 
     # Fallback: Groq API
     groq_key = os.environ.get("GROQ_KEY", "")
@@ -202,10 +215,10 @@ def ai_rewrite(title, summary, vertical, dry_run=False):
             "https://api.groq.com/openai/v1/chat/completions",
             headers={"Authorization": "Bearer " + groq_key, "Content-Type": "application/json"},
             json={
-                "model":   "llama-3.1-8b-instant",
+                "model": "llama-3.1-8b-instant",
                 "messages": [{"role": "user", "content": prompt}],
                 "temperature": 0.3,
-                "max_tokens": 800
+                "max_tokens": 1200
             },
             timeout=20
         )
@@ -213,13 +226,7 @@ def ai_rewrite(title, summary, vertical, dry_run=False):
         raw = r.json()["choices"][0]["message"]["content"].strip()
         raw = re.sub(r'^```[a-z]*\n?', '', raw)
         raw = re.sub(r'\n?```$', '', raw).strip()
-        # Strip control characters that break JSON parsing
-        import re as _re2
-        raw = _re2.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', raw)
-        # Remove control characters that break JSON
-        import re as _re
-        raw = _re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', raw)
-        # Fix common unicode chars that break JSON
+        raw = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', raw)
         raw = raw.replace('\u2019',"'").replace('\u2018',"'").replace('\u201c','"').replace('\u201d','"').replace('\u2013','-').replace('\u2014','-')
         result = json.loads(raw)
         for k in ("title", "summary", "body"):
@@ -228,8 +235,9 @@ def ai_rewrite(title, summary, vertical, dry_run=False):
         log.info("Groq rewrite OK: " + result["title"][:50])
         return result
     except Exception as e:
-        log.warning("Ollama failed (" + str(e) + ") - using original")
+        log.warning("Groq failed (" + str(e)[:80] + ") - using original")
         return fallback
+
 
 
 # FLUX client singleton - initialized once, reused for all articles
@@ -365,6 +373,7 @@ def process_vertical(vertical, dry_run=False):
             except Exception:
                 pub = datetime.now(timezone.utc)
             log.info("Processing: " + raw_title[:60])
+            time.sleep(1.5)
             ai  = ai_rewrite(raw_title, raw_summary, vertical, dry_run)
             img_query = ai.get("image_query", ai.get("image_prompt", raw_title))
             img = generate_image(img_query, slug, dry_run)
