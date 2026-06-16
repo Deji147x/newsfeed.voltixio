@@ -268,13 +268,45 @@ def get_flux_client(token):
             log.warning("FLUX client init failed: " + str(e)[:80])
     return _flux_client
 
-def generate_image(prompt, slug, dry_run=False):
+def fetch_og_image_url(article_url):
+    """Scrape og:image meta tag from the original article URL."""
+    if not article_url:
+        return ""
+    try:
+        import urllib.request as _ur, re as _re2
+        req = _ur.Request(article_url, headers={"User-Agent": "Mozilla/5.0 (compatible; VoltixIOBot/1.0)"})
+        with _ur.urlopen(req, timeout=4) as resp:
+            chunk = resp.read(40000).decode("utf-8", errors="ignore")
+        m = (_re2.search(r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\'](https?://[^"\'>\s]+)', chunk) or
+             _re2.search(r'<meta[^>]+content=["\'](https?://[^"\'>\s]+)[^>]+property=["\']og:image["\']', chunk))
+        if m:
+            return m.group(1)
+    except Exception:
+        pass
+    return ""
+
+
+def generate_image(prompt, slug, dry_run=False, article_url=None):
     IMAGES_DIR.mkdir(parents=True, exist_ok=True)
     img_path = IMAGES_DIR / (slug + ".jpg")
     if img_path.exists():
         return BASE_URL + "/images/" + slug + ".jpg"
     if dry_run:
         return BASE_URL + "/images/placeholder.jpg"
+
+    # Priority 1: real photo scraped from the source article's og:image
+    if article_url:
+        try:
+            og_url = fetch_og_image_url(article_url)
+            if og_url:
+                r_og = requests.get(og_url, timeout=8, headers={"User-Agent": "Mozilla/5.0"})
+                r_og.raise_for_status()
+                if len(r_og.content) > 8000:
+                    img_path.write_bytes(r_og.content)
+                    log.info("Image saved (og:image): " + slug + ".jpg")
+                    return BASE_URL + "/images/" + slug + ".jpg"
+        except Exception as e_og:
+            log.warning("og:image failed (" + str(e_og)[:60] + ") - trying LoremFlickr")
 
     # LoremFlickr with topic-relevant keywords from article title
     import re as _re
@@ -362,6 +394,7 @@ def process_vertical(vertical, dry_run=False):
         for entry in feed.entries[:8]:
             raw_title   = str(entry.get("title", "")).strip()
             raw_summary = re.sub(r'<[^>]+>', '', str(entry.get("summary", entry.get("description", "")))).strip()
+            raw_link    = str(entry.get("link", "")).strip()
             if not raw_title or len(raw_title) < 10:
                 continue
             slug = slugify(raw_title)[:80]
@@ -376,7 +409,7 @@ def process_vertical(vertical, dry_run=False):
             time.sleep(1.5)
             ai  = ai_rewrite(raw_title, raw_summary, vertical, dry_run)
             img_query = ai.get("image_query", ai.get("image_prompt", raw_title))
-            img = generate_image(img_query, slug, dry_run)
+            img = generate_image(img_query, slug, dry_run, article_url=raw_link)
             items.append({
                 "slug":       slug,
                 "title":      ai["title"],
