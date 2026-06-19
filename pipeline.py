@@ -292,7 +292,12 @@ def generate_image(prompt, slug, dry_run=False, article_url=None, vertical=None)
     IMAGES_DIR.mkdir(parents=True, exist_ok=True)
     img_path = IMAGES_DIR / (slug + ".jpg")
     if img_path.exists():
-        return BASE_URL + "/images/" + slug + ".jpg"
+        import time as _t
+        age_days = (_t.time() - img_path.stat().st_mtime) / 86400
+        if age_days < 7:
+            return BASE_URL + "/images/" + slug + ".jpg"
+        # Stale image - delete and regenerate
+        img_path.unlink()
     if dry_run:
         return BASE_URL + "/images/placeholder.jpg"
 
