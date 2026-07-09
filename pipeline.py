@@ -241,11 +241,11 @@ def ai_rewrite(title, summary, vertical, dry_run=False):
     try:
         r_ol = requests.post("http://localhost:11434/api/chat",
             headers={"Content-Type": "application/json"},
-            json={"model":"gemma2:9b","messages":[{"role":"user","content":prompt}],"stream":False,"options":{"temperature":0.3,"num_predict":800}},
+            json={"model":"tinyllama","messages":[{"role":"user","content":prompt}],"stream":False,"options":{"temperature":0.3,"num_predict":800}},
             timeout=120)
         r_ol.raise_for_status()
         raw_ol = r_ol.json().get("message",{}).get("content","").strip()
-        raw_ol = re.sub(r"[ --]","",raw_ol)
+        raw_ol = re.sub(r"[--]","",raw_ol)
         _s = raw_ol.find("{"); _e = raw_ol.rfind("}") + 1
         if _s >= 0 and _e > _s: raw_ol = raw_ol[_s:_e]
         result_ol = json.loads(raw_ol)
