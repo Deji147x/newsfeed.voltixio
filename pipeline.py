@@ -235,7 +235,26 @@ def ai_rewrite(title, summary, vertical, dry_run=False):
         log.info("Groq rewrite OK: " + result["title"][:50])
         return result
     except Exception as e:
-        log.warning("Groq failed (" + str(e)[:80] + ") - using original")
+        log.warning("Groq failed (" + str(e)[:80] + ") - trying Ollama")
+
+    # Final fallback: local Ollama gemma2:9b (free, no rate limits)
+    try:
+        r_ol = requests.post("http://localhost:11434/api/chat",
+            headers={"Content-Type": "application/json"},
+            json={"model":"gemma2:9b","messages":[{"role":"user","content":prompt}],"stream":False,"options":{"temperature":0.3,"num_predict":800}},
+            timeout=120)
+        r_ol.raise_for_status()
+        raw_ol = r_ol.json().get("message",{}).get("content","").strip()
+        raw_ol = re.sub(r"[ --]","",raw_ol)
+        _s = raw_ol.find("{"); _e = raw_ol.rfind("}") + 1
+        if _s >= 0 and _e > _s: raw_ol = raw_ol[_s:_e]
+        result_ol = json.loads(raw_ol)
+        for k in ("title","summary","body"):
+            if k not in result_ol: result_ol[k] = fallback[k]
+        log.info("Ollama rewrite OK: " + result_ol["title"][:50])
+        return result_ol
+    except Exception as e2:
+        log.warning("Ollama failed (" + str(e2)[:60] + ") - using original")
         return fallback
 
 
