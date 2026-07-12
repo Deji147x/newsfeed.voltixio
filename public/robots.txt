@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://newsfeed.voltixio.com/sitemap.xml
+Sitemap: https://newsfeed.voltixio.com/sitemap-news.xml

@@ -146,13 +146,10 @@ def ai_rewrite(title, summary, vertical, dry_run=False):
         "title":        safe_title,
         "summary":      safe_summary[:200],
         "body":         fallback_body,
-        "image_query":  vertical + " news " + safe_title.split()[0] if safe_title else "news"
+        "image_query":  vertical + " news " + safe_title.split()[0] if safe_title else "news",
+        "ai_ok":        False,
     }
     if dry_run:
-        return fallback
-    groq_key = os.environ.get("GROQ_KEY", "")
-    if not groq_key:
-        log.warning("GROQ_KEY not set - using original text")
         return fallback
     prompt = (
         "You are a senior journalist writing for VoltixIO NewsFeed. Write a full news article.\n"
@@ -196,11 +193,12 @@ def ai_rewrite(title, summary, vertical, dry_run=False):
             raw_or = re.sub(r'^```[a-z]*\n?', '', raw_or)
             raw_or = re.sub(r'\n?```$', '', raw_or).strip()
             raw_or = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', raw_or)
-            raw_or = raw_or.replace('\u2019',"'").replace('\u2018',"'").replace('\u201c','"').replace('\u201d','"').replace('\u2013','-').replace('\u2014','-')
+            raw_or = raw_or.replace('’',"'").replace('‘',"'").replace('“','"').replace('”','"').replace('–','-').replace('—','-')
             result_or = json.loads(raw_or)
             for k in ("title", "summary", "body"):
                 if k not in result_or:
                     result_or[k] = fallback[k]
+            result_or["ai_ok"] = True
             log.info("OpenRouter rewrite OK: " + result_or["title"][:50])
             return result_or
         except Exception as e_or:
@@ -209,33 +207,35 @@ def ai_rewrite(title, summary, vertical, dry_run=False):
     # Fallback: Groq API
     groq_key = os.environ.get("GROQ_KEY", "")
     if not groq_key:
-        return fallback
-    try:
-        r = requests.post(
-            "https://api.groq.com/openai/v1/chat/completions",
-            headers={"Authorization": "Bearer " + groq_key, "Content-Type": "application/json"},
-            json={
-                "model": "llama-3.1-8b-instant",
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": 0.3,
-                "max_tokens": 1200
-            },
-            timeout=20
-        )
-        r.raise_for_status()
-        raw = r.json()["choices"][0]["message"]["content"].strip()
-        raw = re.sub(r'^```[a-z]*\n?', '', raw)
-        raw = re.sub(r'\n?```$', '', raw).strip()
-        raw = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', raw)
-        raw = raw.replace('\u2019',"'").replace('\u2018',"'").replace('\u201c','"').replace('\u201d','"').replace('\u2013','-').replace('\u2014','-')
-        result = json.loads(raw)
-        for k in ("title", "summary", "body"):
-            if k not in result:
-                result[k] = fallback[k]
-        log.info("Groq rewrite OK: " + result["title"][:50])
-        return result
-    except Exception as e:
-        log.warning("Groq failed (" + str(e)[:80] + ") - trying Ollama")
+        log.warning("GROQ_KEY not set - trying Ollama")
+    else:
+        try:
+            r = requests.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={"Authorization": "Bearer " + groq_key, "Content-Type": "application/json"},
+                json={
+                    "model": "llama-3.1-8b-instant",
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.3,
+                    "max_tokens": 1200
+                },
+                timeout=20
+            )
+            r.raise_for_status()
+            raw = r.json()["choices"][0]["message"]["content"].strip()
+            raw = re.sub(r'^```[a-z]*\n?', '', raw)
+            raw = re.sub(r'\n?```$', '', raw).strip()
+            raw = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', raw)
+            raw = raw.replace('’',"'").replace('‘',"'").replace('“','"').replace('”','"').replace('–','-').replace('—','-')
+            result = json.loads(raw)
+            for k in ("title", "summary", "body"):
+                if k not in result:
+                    result[k] = fallback[k]
+            result["ai_ok"] = True
+            log.info("Groq rewrite OK: " + result["title"][:50])
+            return result
+        except Exception as e:
+            log.warning("Groq failed (" + str(e)[:80] + ") - trying Ollama")
 
     # Final fallback: local Ollama gemma2:9b (free, no rate limits)
     try:
@@ -245,12 +245,14 @@ def ai_rewrite(title, summary, vertical, dry_run=False):
             timeout=120)
         r_ol.raise_for_status()
         raw_ol = r_ol.json().get("message",{}).get("content","").strip()
-        raw_ol = re.sub(r"[ --]","",raw_ol)
+        raw_ol = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]","",raw_ol)
+        raw_ol = raw_ol.replace('’',"'").replace('‘',"'").replace('“','"').replace('”','"').replace('–','-').replace('—','-')
         _s = raw_ol.find("{"); _e = raw_ol.rfind("}") + 1
         if _s >= 0 and _e > _s: raw_ol = raw_ol[_s:_e]
         result_ol = json.loads(raw_ol)
         for k in ("title","summary","body"):
             if k not in result_ol: result_ol[k] = fallback[k]
+        result_ol["ai_ok"] = True
         log.info("Ollama rewrite OK: " + result_ol["title"][:50])
         return result_ol
     except Exception as e2:
@@ -258,20 +260,6 @@ def ai_rewrite(title, summary, vertical, dry_run=False):
         return fallback
 
 
-
-# FLUX client singleton - initialized once, reused for all articles
-_flux_client = None
-
-def get_flux_client(token):
-    global _flux_client
-    if _flux_client is None and token:
-        try:
-            from gradio_client import Client
-            _flux_client = Client("multimodalart/FLUX.1-merged", headers={"Authorization": "Bearer " + token})
-            log.info("FLUX client initialized")
-        except Exception as e:
-            log.warning("FLUX client init failed: " + str(e)[:80])
-    return _flux_client
 
 # FLUX client singleton - initialized once, reused for all articles
 _flux_client = None
@@ -367,7 +355,7 @@ def generate_image(prompt, slug, dry_run=False, article_url=None, vertical=None)
         return BASE_URL + "/images/" + slug + ".jpg"
     except Exception as e2:
         log.warning("Image failed: " + str(e2))
-        return BASE_URL + "/images/placeholder.jpg" 
+        return BASE_URL + "/images/placeholder.jpg"
 
 
 def build_rss(vertical, items, filename):
@@ -413,9 +401,45 @@ def build_rss(vertical, items, filename):
     log.info("Feed written: " + filename + " (" + str(len(items)) + " items)")
 
 
-def process_vertical(vertical, dry_run=False):
+def build_sitemaps(items):
+    """Write sitemap.xml (all current articles) and sitemap-news.xml (Google News:
+    articles under 48h old, AI-written only - boilerplate fallbacks excluded)."""
+    pub_dir = BASE_DIR / "public"
+    pub_dir.mkdir(parents=True, exist_ok=True)
+    now = datetime.now(timezone.utc)
+    urls = [
+        "  <url>\n    <loc>" + BASE_URL + "/</loc>\n    <changefreq>always</changefreq>"
+        "\n    <priority>1.0</priority>\n    <lastmod>" + now.strftime("%Y-%m-%d") + "</lastmod>\n  </url>"
+    ]
+    news_urls = []
+    for item in items:
+        loc = BASE_URL + "/article/" + item["slug"]
+        urls.append(
+            "  <url>\n    <loc>" + loc + "</loc>\n    <changefreq>never</changefreq>"
+            "\n    <priority>0.8</priority>\n    <lastmod>" + item["pub_date"].strftime("%Y-%m-%d") + "</lastmod>\n  </url>"
+        )
+        age_hours = (now - item["pub_date"]).total_seconds() / 3600
+        if age_hours <= 48 and item.get("ai_ok", True):
+            news_urls.append(
+                "  <url>\n    <loc>" + loc + "</loc>\n    <news:news>\n      <news:publication>"
+                "\n        <news:name>VoltixIO NewsFeed</news:name>\n        <news:language>en</news:language>"
+                "\n      </news:publication>\n      <news:publication_date>" + item["pub_date"].strftime("%Y-%m-%dT%H:%M:%SZ") + "</news:publication_date>"
+                "\n      <news:title><![CDATA[" + item["title"] + "]]></news:title>\n    </news:news>\n  </url>"
+            )
+    header = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"\n'
+        '        xmlns:news="http://www.google.com/schemas/sitemap-news/0.9">\n'
+    )
+    (pub_dir / "sitemap.xml").write_text(header + "\n".join(urls) + "\n</urlset>\n", encoding="utf-8")
+    (pub_dir / "sitemap-news.xml").write_text(header + "\n".join(news_urls) + "\n</urlset>\n", encoding="utf-8")
+    log.info("Sitemaps written: " + str(len(urls)) + " urls, " + str(len(news_urls)) + " news urls")
+
+
+def process_vertical(vertical, dry_run=False, seen=None):
     items = []
-    seen  = set()
+    if seen is None:
+        seen = set()
     for src in RSS_SOURCES.get(vertical, []):
         try:
             feed = feedparser.parse(src)
@@ -437,7 +461,8 @@ def process_vertical(vertical, dry_run=False):
                 continue
             seen.add(slug)
             try:
-                pub = datetime(*entry.published_parsed[:6], tzinfo=timezone.utc) if hasattr(entry, 'published_parsed') and entry.published_parsed else datetime.now(timezone.utc)
+                parsed = getattr(entry, 'published_parsed', None) or getattr(entry, 'updated_parsed', None)
+                pub = datetime(*parsed[:6], tzinfo=timezone.utc) if parsed else datetime.now(timezone.utc)
             except Exception:
                 pub = datetime.now(timezone.utc)
             log.info("Processing: " + raw_title[:60])
@@ -454,6 +479,7 @@ def process_vertical(vertical, dry_run=False):
                 "source_url": str(entry.get("link", "")),
                 "vertical":   vertical,
                 "pub_date":   pub,
+                "ai_ok":      ai.get("ai_ok", True),
             })
             if len(items) >= MAX_ITEMS:
                 break
@@ -468,9 +494,10 @@ def run(target=None, dry_run=False):
     t0 = time.time()
     verticals = [target] if target else list(RSS_SOURCES.keys())
     all_items = []
+    global_seen = set()
     for v in verticals:
         log.info("--- " + v + " ---")
-        items = process_vertical(v, dry_run)
+        items = process_vertical(v, dry_run, seen=global_seen)
         if items:
             build_rss(v, items, v + ".xml")
             all_items.extend(items)
@@ -478,13 +505,13 @@ def run(target=None, dry_run=False):
             _sorted = sorted(all_items, key=lambda x: x["pub_date"], reverse=True)[:120]
             build_rss("all", _sorted, "uglyfeed.xml")
             log.info("uglyfeed updated: " + str(len(_sorted)) + " articles so far")
-    # Balance: take up to 5 articles per vertical, then fill remainder by recency
+    # Balance: take up to 8 articles per vertical, then fill remainder by recency
     from collections import defaultdict
     per_vert = defaultdict(list)
     for item in sorted(all_items, key=lambda x: x["pub_date"], reverse=True):
         per_vert[item["vertical"]].append(item)
     balanced = []
-    # First pass: up to 5 per vertical
+    # First pass: up to 8 per vertical
     for v_items in per_vert.values():
         balanced.extend(v_items[:8])
     # Second pass: fill to 120 by recency from remaining
@@ -493,6 +520,7 @@ def run(target=None, dry_run=False):
     balanced.extend(remainder[:120-len(balanced)])
     balanced = sorted(balanced, key=lambda x: x["pub_date"], reverse=True)[:120]
     build_rss("all", balanced, "uglyfeed.xml")
+    build_sitemaps(balanced)
     log.info("=== Done: " + str(len(all_items)) + " articles in " + str(round(time.time()-t0, 1)) + "s ===")
 
 
