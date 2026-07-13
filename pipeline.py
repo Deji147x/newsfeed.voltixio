@@ -14,6 +14,8 @@ BASE_URL   = "https://newsfeed.voltixio.com"
 MAX_ITEMS  = 30
 IMAGE_W    = 1200
 IMAGE_H    = 630
+MIN_BODY_CHARS = 2000
+MAX_BODY_CHARS = 3000
 
 RSS_SOURCES = {
     "technology":    [
@@ -113,12 +115,55 @@ logging.basicConfig(
 )
 log = logging.getLogger("voltixio")
 
+_PLACEHOLDER_SNIPPETS = (
+    "compelling headline",
+    "2 sentence summary",
+    "paragraph 1</p>",
+    "specific keywords describing",
+)
+
+_FILLER_PARAS = (
+    "<p>This story continues to develop across the {v} sector, with additional reporting "
+    "and reaction expected in the hours ahead.</p>",
+    "<p>VoltixIO NewsFeed will keep tracking verified updates on this {v} story as they "
+    "surface, so check back for the latest developments and analysis.</p>",
+    "<p>Readers following {v} news are encouraged to watch for official statements and "
+    "follow-up coverage as more details become available.</p>",
+)
+
+
+def _looks_like_placeholder(result):
+    blob = (str(result.get("title", "")) + " " + str(result.get("summary", "")) + " " + str(result.get("body", ""))).lower()
+    return any(snip in blob for snip in _PLACEHOLDER_SNIPPETS)
+
+
+def _plain_len(body):
+    return len(re.sub(r'<[^>]+>', '', body))
+
+
+def _fit_body_length(body, vertical):
+    if _plain_len(body) > MAX_BODY_CHARS:
+        paras = re.findall(r'<p>.*?</p>', body, flags=re.S) or [body]
+        out, total = [], 0
+        for p in paras:
+            p_len = len(re.sub(r'<[^>]+>', '', p))
+            if out and total + p_len > MAX_BODY_CHARS:
+                break
+            out.append(p)
+            total += p_len
+        return "".join(out)
+    i = 0
+    while _plain_len(body) < MIN_BODY_CHARS:
+        body += _FILLER_PARAS[i % len(_FILLER_PARAS)].format(v=vertical)
+        i += 1
+    return body
+
 
 def ai_rewrite(title, summary, vertical, dry_run=False):
     clean = lambda s: re.sub(r'[^\w\s\.\,\-\!\?]', ' ', str(s)).strip()
     safe_title   = clean(title)[:80]
     safe_summary = clean(summary)[:300]
-    # Build a decent fallback article even without Groq
+    # Build a decent fallback article even without an AI provider
     sentences = [s.strip() for s in safe_summary.replace('!','.').replace('?','.').split('.') if len(s.strip()) > 20]
     if len(sentences) >= 2:
         fallback_body = (
@@ -145,17 +190,18 @@ def ai_rewrite(title, summary, vertical, dry_run=False):
     fallback = {
         "title":        safe_title,
         "summary":      safe_summary[:200],
-        "body":         fallback_body,
+        "body":         _fit_body_length(fallback_body, vertical),
         "image_query":  vertical + " news " + safe_title.split()[0] if safe_title else "news",
         "ai_ok":        False,
     }
     if dry_run:
         return fallback
+
     prompt = (
         "You are a senior journalist writing for VoltixIO NewsFeed. Write a full news article.\n"
         "Headline: " + safe_title + "\n"
         "Summary: " + safe_summary + "\n\n"
-        "Write a detailed, insightful article with 4-5 paragraphs covering:\n"
+        "Write a detailed, insightful article of 2000-3000 characters (roughly 5-7 paragraphs) covering:\n"
         "- What happened and why it matters\n"
         "- Key details, numbers, names, context\n"
         "- Background and implications\n"
@@ -163,6 +209,22 @@ def ai_rewrite(title, summary, vertical, dry_run=False):
         "Respond with ONLY this JSON, no markdown, no explanation:\n"
         '{"title":"compelling headline under 90 chars","summary":"2 sentence summary","body":"<p>paragraph 1</p><p>paragraph 2</p><p>paragraph 3</p><p>paragraph 4</p><p>paragraph 5</p>","image_query":"3 specific keywords describing the visual scene of this story"}'
     )
+
+    def _parse(raw):
+        s = raw.find("{")
+        e = raw.rfind("}") + 1
+        if s >= 0 and e > s:
+            raw = raw[s:e]
+        raw = re.sub(r'^```[a-z]*\n?', '', raw)
+        raw = re.sub(r'\n?```$', '', raw).strip()
+        raw = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', raw)
+        raw = raw.replace('’', "'").replace('‘', "'").replace('“', '"').replace('”', '"').replace('–', '-').replace('—', '-')
+        result = json.loads(raw, strict=False)
+        for k in ("title", "summary", "body"):
+            if k not in result:
+                result[k] = fallback[k]
+        return result
+
     # Primary: OpenRouter API (fast, free models, no CPU)
     or_key = os.environ.get("OPENROUTER_KEY", "")
     if or_key:
@@ -184,20 +246,10 @@ def ai_rewrite(title, summary, vertical, dry_run=False):
                 timeout=20
             )
             r_or.raise_for_status()
-            raw_or = r_or.json()["choices"][0]["message"]["content"].strip()
-            # Extract JSON object from response
-            _s = raw_or.find("{")
-            _e = raw_or.rfind("}") + 1
-            if _s >= 0 and _e > _s:
-                raw_or = raw_or[_s:_e]
-            raw_or = re.sub(r'^```[a-z]*\n?', '', raw_or)
-            raw_or = re.sub(r'\n?```$', '', raw_or).strip()
-            raw_or = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', raw_or)
-            raw_or = raw_or.replace('’',"'").replace('‘',"'").replace('“','"').replace('”','"').replace('–','-').replace('—','-')
-            result_or = json.loads(raw_or)
-            for k in ("title", "summary", "body"):
-                if k not in result_or:
-                    result_or[k] = fallback[k]
+            result_or = _parse(r_or.json()["choices"][0]["message"]["content"].strip())
+            if _looks_like_placeholder(result_or):
+                raise ValueError("placeholder leak from OpenRouter")
+            result_or["body"] = _fit_body_length(result_or["body"], vertical)
             result_or["ai_ok"] = True
             log.info("OpenRouter rewrite OK: " + result_or["title"][:50])
             return result_or
@@ -206,9 +258,7 @@ def ai_rewrite(title, summary, vertical, dry_run=False):
 
     # Fallback: Groq API
     groq_key = os.environ.get("GROQ_KEY", "")
-    if not groq_key:
-        log.warning("GROQ_KEY not set - trying Ollama")
-    else:
+    if groq_key:
         try:
             r = requests.post(
                 "https://api.groq.com/openai/v1/chat/completions",
@@ -222,36 +272,30 @@ def ai_rewrite(title, summary, vertical, dry_run=False):
                 timeout=20
             )
             r.raise_for_status()
-            raw = r.json()["choices"][0]["message"]["content"].strip()
-            raw = re.sub(r'^```[a-z]*\n?', '', raw)
-            raw = re.sub(r'\n?```$', '', raw).strip()
-            raw = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', raw)
-            raw = raw.replace('’',"'").replace('‘',"'").replace('“','"').replace('”','"').replace('–','-').replace('—','-')
-            result = json.loads(raw)
-            for k in ("title", "summary", "body"):
-                if k not in result:
-                    result[k] = fallback[k]
+            result = _parse(r.json()["choices"][0]["message"]["content"].strip())
+            if _looks_like_placeholder(result):
+                raise ValueError("placeholder leak from Groq")
+            result["body"] = _fit_body_length(result["body"], vertical)
             result["ai_ok"] = True
             log.info("Groq rewrite OK: " + result["title"][:50])
             return result
         except Exception as e:
             log.warning("Groq failed (" + str(e)[:80] + ") - trying Ollama")
+    else:
+        log.warning("GROQ_KEY not set - trying Ollama")
 
-    # Final fallback: local Ollama gemma2:9b (free, no rate limits)
+    # Final fallback: local Ollama (tinyllama - light footprint, avoids VPS OOM)
     try:
         r_ol = requests.post("http://localhost:11434/api/chat",
             headers={"Content-Type": "application/json"},
-            json={"model":"gemma2:9b","messages":[{"role":"user","content":prompt}],"stream":False,"options":{"temperature":0.3,"num_predict":800}},
+            json={"model": "tinyllama", "messages": [{"role": "user", "content": prompt}], "stream": False, "options": {"temperature": 0.3, "num_predict": 800}},
             timeout=120)
         r_ol.raise_for_status()
-        raw_ol = r_ol.json().get("message",{}).get("content","").strip()
-        raw_ol = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]","",raw_ol)
-        raw_ol = raw_ol.replace('’',"'").replace('‘',"'").replace('“','"').replace('”','"').replace('–','-').replace('—','-')
-        _s = raw_ol.find("{"); _e = raw_ol.rfind("}") + 1
-        if _s >= 0 and _e > _s: raw_ol = raw_ol[_s:_e]
-        result_ol = json.loads(raw_ol)
-        for k in ("title","summary","body"):
-            if k not in result_ol: result_ol[k] = fallback[k]
+        raw_ol = r_ol.json().get("message", {}).get("content", "").strip()
+        result_ol = _parse(raw_ol)
+        if _looks_like_placeholder(result_ol):
+            raise ValueError("placeholder leak from Ollama")
+        result_ol["body"] = _fit_body_length(result_ol["body"], vertical)
         result_ol["ai_ok"] = True
         log.info("Ollama rewrite OK: " + result_ol["title"][:50])
         return result_ol
@@ -259,21 +303,6 @@ def ai_rewrite(title, summary, vertical, dry_run=False):
         log.warning("Ollama failed (" + str(e2)[:60] + ") - using original")
         return fallback
 
-
-
-# FLUX client singleton - initialized once, reused for all articles
-_flux_client = None
-
-def get_flux_client(token):
-    global _flux_client
-    if _flux_client is None and token:
-        try:
-            from gradio_client import Client
-            _flux_client = Client("multimodalart/FLUX.1-merged", headers={"Authorization": "Bearer " + token})
-            log.info("FLUX client initialized")
-        except Exception as e:
-            log.warning("FLUX client init failed: " + str(e)[:80])
-    return _flux_client
 
 def fetch_og_image_url(article_url):
     """Scrape og:image meta tag from the original article URL, following redirects (Google News etc)."""
@@ -325,7 +354,7 @@ def generate_image(prompt, slug, dry_run=False, article_url=None, vertical=None)
     # LoremFlickr with topic-relevant keywords from article title
     import re as _re
     clean = _re.sub(r"[^a-zA-Z0-9\s]", " ", str(prompt)).strip()
-    stopwords = {"the","and","for","that","with","this","from","have","will","been","they","what","when","your","after"}
+    stopwords = {"the", "and", "for", "that", "with", "this", "from", "have", "will", "been", "they", "what", "when", "your", "after"}
     words = [w for w in clean.lower().split() if len(w) > 4 and w not in stopwords][:3]
     if vertical == "local":
         # Force Baltimore/Maryland relevance for Local vertical
@@ -374,8 +403,8 @@ def build_rss(vertical, items, filename):
             "\n      <dc:creator>VoltixIO AI</dc:creator>"
             "\n      <category>" + item.get("vertical", vertical) + "</category>"
             "\n      <description><![CDATA[" + item["summary"] + "]]></description>"
-            "\n      <source_url><![CDATA[" + item.get("source_url","") + "]]></source_url>"
-            "\n      <content:encoded><![CDATA[<img src='" + item["image_url"] + "' style='width:100%;border-radius:8px;margin-bottom:16px'>" + item["body"] + "<p style='margin-top:20px;padding-top:16px;border-top:1px solid #222'><a href='" + item.get("source_url","#") + "' target='_blank' rel='noopener' style='color:#378ADD;font-weight:600'>Read original article &#8599;</a></p>]]></content:encoded>"
+            "\n      <source_url><![CDATA[" + item.get("source_url", "") + "]]></source_url>"
+            "\n      <content:encoded><![CDATA[<img src='" + item["image_url"] + "' style='width:100%;border-radius:8px;margin-bottom:16px'>" + item["body"] + "<p style='margin-top:20px;padding-top:16px;border-top:1px solid #222'><a href='" + item.get("source_url", "#") + "' target='_blank' rel='noopener' style='color:#378ADD;font-weight:600'>Read original article &#8599;</a></p>]]></content:encoded>"
             "\n      <media:content url='" + item["image_url"] + "' medium='image' width='" + str(IMAGE_W) + "' height='" + str(IMAGE_H) + "' type='image/jpeg'/>"
             "\n    </item>"
         )
@@ -447,7 +476,7 @@ def process_vertical(vertical, dry_run=False, seen=None):
         except Exception as e:
             log.warning("Failed " + src + ": " + str(e))
             continue
-        for entry in feed.entries[:8]:
+        for entry in feed.entries[:15]:
             raw_title   = str(entry.get("title", "")).strip()
             raw_summary = re.sub(r'<[^>]+>', '', str(entry.get("summary", entry.get("description", "")))).strip()
             import html as _html
@@ -511,17 +540,17 @@ def run(target=None, dry_run=False):
     for item in sorted(all_items, key=lambda x: x["pub_date"], reverse=True):
         per_vert[item["vertical"]].append(item)
     balanced = []
-    # First pass: up to 8 per vertical
+    # First pass: up to 8 per vertical (floor, so low-volume verticals aren't crowded out)
     for v_items in per_vert.values():
         balanced.extend(v_items[:8])
     # Second pass: fill to 120 by recency from remaining
     used = set(id(i) for i in balanced)
     remainder = [i for i in sorted(all_items, key=lambda x: x["pub_date"], reverse=True) if id(i) not in used]
-    balanced.extend(remainder[:120-len(balanced)])
+    balanced.extend(remainder[:120 - len(balanced)])
     balanced = sorted(balanced, key=lambda x: x["pub_date"], reverse=True)[:120]
     build_rss("all", balanced, "uglyfeed.xml")
     build_sitemaps(balanced)
-    log.info("=== Done: " + str(len(all_items)) + " articles in " + str(round(time.time()-t0, 1)) + "s ===")
+    log.info("=== Done: " + str(len(all_items)) + " articles in " + str(round(time.time() - t0, 1)) + "s ===")
 
 
 if __name__ == "__main__":
