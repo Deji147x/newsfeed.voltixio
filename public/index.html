@@ -308,6 +308,22 @@ footer{background:var(--bg2);border-top:1px solid var(--border);margin-top:16px}
   });
 </script>
 <script charset="utf-8" type="text/javascript" src="//js-na2.hsforms.net/forms/embed/v2.js"></script>
+<!-- GA4 analytics: replace G-XXXXXXXXXX with your Measurement ID (analytics.google.com) to activate -->
+<script>
+  (function () {
+    var GA_ID = "G-XXXXXXXXXX";
+    if (GA_ID === "G-XXXXXXXXXX") return; /* placeholder - analytics disabled until ID is set */
+    var s = document.createElement("script");
+    s.async = true;
+    s.src = "https://www.googletagmanager.com/gtag/js?id=" + GA_ID;
+    document.head.appendChild(s);
+    window.dataLayer = window.dataLayer || [];
+    function gtag() { dataLayer.push(arguments); }
+    gtag("js", new Date());
+    gtag("config", GA_ID);
+  })();
+</script>
+<script src="https://analytics.ahrefs.com/analytics.js" data-key="W+JHDOdKnYBN6M6CrkKXqA" async></script>
 </head>
 <body>
 

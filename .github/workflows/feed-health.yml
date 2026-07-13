@@ -1,0 +1,27 @@
+name: Feed health check
+
+# Fails (and emails the repo owner) if the live feed hasn't been rebuilt in 3 hours,
+# which means the cron pipeline on the VPS has stopped.
+on:
+  schedule:
+    - cron: "17 */2 * * *"
+  workflow_dispatch:
+
+jobs:
+  freshness:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check uglyfeed.xml lastBuildDate
+        run: |
+          last=$(curl -sf https://newsfeed.voltixio.com/feeds/uglyfeed.xml | grep -oPm1 '(?<=<lastBuildDate>)[^<]+')
+          if [ -z "$last" ]; then
+            echo "::error::Could not fetch feed or find lastBuildDate"
+            exit 1
+          fi
+          echo "lastBuildDate: $last"
+          age_min=$(( ( $(date +%s) - $(date -d "$last" +%s) ) / 60 ))
+          echo "Feed age: ${age_min} minutes"
+          if [ "$age_min" -gt 180 ]; then
+            echo "::error::Feed is stale: ${age_min} minutes old (threshold 180)"
+            exit 1
+          fi
