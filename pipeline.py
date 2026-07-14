@@ -349,7 +349,7 @@ def generate_image(prompt, slug, dry_run=False, article_url=None, vertical=None)
                     log.info("Image saved (og:image): " + slug + ".jpg")
                     return BASE_URL + "/images/" + slug + ".jpg"
         except Exception as e_og:
-            log.warning("og:image failed (" + str(e_og)[:60] + ") - trying LoremFlickr")
+            log.warning("og:image failed (" + str(e_og)[:60] + ") - trying Picsum")
 
     # Fallback: Picsum, seeded deterministically per-slug so each article gets a
     # distinct (if generic) photo instead of a repeated stock image. LoremFlickr was
