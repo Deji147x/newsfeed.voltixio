@@ -351,33 +351,14 @@ def generate_image(prompt, slug, dry_run=False, article_url=None, vertical=None)
         except Exception as e_og:
             log.warning("og:image failed (" + str(e_og)[:60] + ") - trying LoremFlickr")
 
-    # LoremFlickr with topic-relevant keywords from article title
-    import re as _re
-    clean = _re.sub(r"[^a-zA-Z0-9\s]", " ", str(prompt)).strip()
-    stopwords = {"the", "and", "for", "that", "with", "this", "from", "have", "will", "been", "they", "what", "when", "your", "after"}
-    words = [w for w in clean.lower().split() if len(w) > 4 and w not in stopwords][:3]
-    if vertical == "local":
-        # Force Baltimore/Maryland relevance for Local vertical
-        query = "baltimore,maryland"
-        if words:
-            query = words[0] + ",baltimore"
-    else:
-        query = ",".join(words) if words else "news,world"
+    # Fallback: Picsum, seeded deterministically per-slug so each article gets a
+    # distinct (if generic) photo instead of a repeated stock image. LoremFlickr was
+    # dropped here: when its keyword-tag search finds no match it silently serves its
+    # own generic default photo instead of erroring, which the old code accepted as
+    # valid - that's why thousands of unrelated articles ended up sharing one image.
     try:
-        url_lf = "https://loremflickr.com/1200/630/" + query
-        r_lf = requests.get(url_lf, timeout=20, allow_redirects=True)
-        r_lf.raise_for_status()
-        if len(r_lf.content) > 10000:
-            img_path.write_bytes(r_lf.content)
-            log.info("Image saved (flickr/" + query + "): " + slug + ".jpg")
-            return BASE_URL + "/images/" + slug + ".jpg"
-    except Exception as e:
-        log.warning("LoremFlickr failed: " + str(e))
-
-    # Fallback: Picsum
-    try:
-        seed_val = abs(hash(slug)) % 1000
-        r2 = requests.get("https://picsum.photos/seed/" + str(seed_val) + "/1200/630", timeout=15, allow_redirects=True)
+        seed_val = hashlib.md5(slug.encode("utf-8")).hexdigest()[:8]
+        r2 = requests.get("https://picsum.photos/seed/" + seed_val + "/1200/630", timeout=15, allow_redirects=True)
         r2.raise_for_status()
         img_path.write_bytes(r2.content)
         log.info("Image saved (picsum): " + slug + ".jpg")
