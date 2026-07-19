@@ -284,14 +284,19 @@ def ai_rewrite(title, summary, vertical, dry_run=False):
     else:
         log.warning("GROQ_KEY not set - trying Ollama")
 
-    # Final fallback: local Ollama (tinyllama - light footprint, avoids VPS OOM)
+    # Final fallback: remote Ollama via API (tinyllama - light footprint, avoids VPS OOM)
+    ollama_key = os.environ.get("OLLAMA_API_KEY", "")
+    ollama_base = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
     try:
-        r_ol = requests.post("http://localhost:11434/api/chat",
-            headers={"Content-Type": "application/json"},
-            json={"model": "tinyllama", "messages": [{"role": "user", "content": prompt}], "stream": False, "options": {"temperature": 0.3, "num_predict": 800}},
-            timeout=120)
+        headers = {"Content-Type": "application/json"}
+        if ollama_key:
+            headers["Authorization"] = "Bearer " + ollama_key
+        r_ol = requests.post(ollama_base.rstrip("/") + "/chat/completions",
+            headers=headers,
+            json={"model": "tinyllama", "messages": [{"role": "user", "content": prompt}], "temperature": 0.3, "max_tokens": 800},
+            timeout=30)
         r_ol.raise_for_status()
-        raw_ol = r_ol.json().get("message", {}).get("content", "").strip()
+        raw_ol = r_ol.json()["choices"][0]["message"]["content"].strip()
         result_ol = _parse(raw_ol)
         if _looks_like_placeholder(result_ol):
             raise ValueError("placeholder leak from Ollama")
