@@ -284,29 +284,9 @@ def ai_rewrite(title, summary, vertical, dry_run=False):
     else:
         log.warning("GROQ_KEY not set - trying Ollama")
 
-    # Final fallback: remote Ollama via API (tinyllama - light footprint, avoids VPS OOM)
-    ollama_key = os.environ.get("OLLAMA_API_KEY", "")
-    ollama_base = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
-    try:
-        headers = {"Content-Type": "application/json"}
-        if ollama_key:
-            headers["Authorization"] = "Bearer " + ollama_key
-        r_ol = requests.post(ollama_base.rstrip("/") + "/chat/completions",
-            headers=headers,
-            json={"model": "tinyllama", "messages": [{"role": "user", "content": prompt}], "temperature": 0.3, "max_tokens": 800},
-            timeout=30)
-        r_ol.raise_for_status()
-        raw_ol = r_ol.json()["choices"][0]["message"]["content"].strip()
-        result_ol = _parse(raw_ol)
-        if _looks_like_placeholder(result_ol):
-            raise ValueError("placeholder leak from Ollama")
-        result_ol["body"] = _fit_body_length(result_ol["body"], vertical)
-        result_ol["ai_ok"] = True
-        log.info("Ollama rewrite OK: " + result_ol["title"][:50])
-        return result_ol
-    except Exception as e2:
-        log.warning("Ollama failed (" + str(e2)[:60] + ") - using original")
-        return fallback
+    # Fallback: deterministic template (guaranteed valid, no external API dependency)
+    log.info("All AI providers exhausted - using deterministic template")
+    return fallback
 
 
 def fetch_og_image_url(article_url):
