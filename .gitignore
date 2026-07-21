@@ -5,3 +5,4 @@ venv/
 __pycache__/
 *.pyc
 public/feeds/*.xml
+public/sitemap*.xml
