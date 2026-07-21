@@ -89,12 +89,12 @@ RSS_SOURCES = {
         "https://tennishead.net/feed/",
     ],
     "politics":      [
-        "https://feeds.cnn.com/cnn_cnnpolitics",
-        "https://feeds.politico.com/politics-news.xml",
         "https://theatlantic.com/feed/politics/",
-        "https://feeds.washingtonpost.com/rss/politics",
         "https://feeds.nbcnews.com/nbcnews/public/politics",
-        "https://www.c-span.org/feeds/cspan_public_affairs.xml",
+        "https://apnews.com/hub/us-political-elections/feed",
+        "https://feeds.reuters.com/politics",
+        "https://www.vox.com/rss/politics/index.xml",
+        "https://news.google.com/rss/search?q=US+politics+congress+senate&hl=en-US&gl=US&ceid=US:en",
     ],
     "local":         [
         "https://www.baltimoresun.com/rss2.0.xml",
