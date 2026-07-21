@@ -58,6 +58,9 @@ RSS_SOURCES = {
         "https://www.medpagetoday.com/rss/headlines.xml",
         "https://www.healthline.com/rss/health-news",
         "https://news.google.com/rss/search?q=health+medical+news+2026&hl=en-US&gl=US&ceid=US:en",
+        "https://www.health.harvard.edu/feed/rss.xml",
+        "https://www.mayoclinic.org/news-rst/feed.xml",
+        "https://www.thelancet.com/journals/lancet/rss",
     ],
     "science":       [
         "https://www.sciencedaily.com/rss/all.xml",
@@ -93,16 +96,25 @@ RSS_SOURCES = {
         "https://news.google.com/rss/search?q=US+politics+congress+senate+2026&hl=en-US&gl=US&ceid=US:en",
     ],
     "local":         [
+        "https://www.baltimoresun.com/feed/",
+        "https://www.wbaltv.com/feed/",
+        "https://foxbaltimore.com/feed/",
+        "https://capitalgazzette.com/feed/",
+        "https://marylandtoday.umd.edu/feed/",
         "https://news.google.com/rss/search?q=Baltimore+Maryland+news&hl=en-US&gl=US&ceid=US:en",
-        "https://news.google.com/rss/search?q=Baltimore+crime+community&hl=en-US&gl=US&ceid=US:en",
-        "https://news.google.com/rss/search?q=Maryland+news+today&hl=en-US&gl=US&ceid=US:en",
     ],
     "world":         [
-        "https://feeds.bbci.co.uk/news/world/rss.xml",
+        "https://feeds.reuters.com/news/world",
+        "https://apnews.com/hub/world-news/feed",
+        "https://www.theguardian.com/international/rss",
+        "https://www.aljazeera.com/xml/rss/all.xml",
         "https://news.google.com/rss/search?q=world+news+international&hl=en-US&gl=US&ceid=US:en",
     ],
     "us":            [
-        "https://feeds.bbci.co.uk/news/rss.xml",
+        "https://apnews.com/hub/us-news/feed",
+        "https://feeds.reuters.com/news/us",
+        "https://feeds.npr.org/1001/rss.xml",
+        "https://www.usatoday.com/feed/",
         "https://news.google.com/rss/search?q=United+States+news+today&hl=en-US&gl=US&ceid=US:en",
     ],
 }
@@ -123,12 +135,9 @@ _PLACEHOLDER_SNIPPETS = (
 )
 
 _FILLER_PARAS = (
-    "<p>This story continues to develop across the {v} sector, with additional reporting "
-    "and reaction expected in the hours ahead.</p>",
-    "<p>VoltixIO NewsFeed will keep tracking verified updates on this {v} story as they "
-    "surface, so check back for the latest developments and analysis.</p>",
-    "<p>Readers following {v} news are encouraged to watch for official statements and "
-    "follow-up coverage as more details become available.</p>",
+    "<p>This development reflects broader shifts within the {v} space. Industry watchers are closely monitoring how key players respond in the coming days, as the situation may shape strategic decisions across the sector.</p>",
+    "<p>The ripple effects of this news extend beyond immediate headlines. Market participants and {v} professionals will be weighing the implications for their own operations and investment strategies as new information emerges.</p>",
+    "<p>As more details surface, the true impact on the {v} landscape will become clearer. Stakeholders are advised to monitor official channels and credible reporting for the latest updates and context.</p>",
 )
 
 
@@ -198,14 +207,16 @@ def ai_rewrite(title, summary, vertical, dry_run=False):
         return fallback
 
     prompt = (
-        "You are a senior journalist writing for VoltixIO NewsFeed. Write a full news article.\n"
+        "You are a thoughtful, engaging journalist writing for VoltixIO NewsFeed. Write an original, humanized news article.\n"
         "Headline: " + safe_title + "\n"
         "Summary: " + safe_summary + "\n\n"
-        "Write a detailed, insightful article of 2000-3000 characters (roughly 5-7 paragraphs) covering:\n"
-        "- What happened and why it matters\n"
-        "- Key details, numbers, names, context\n"
-        "- Background and implications\n"
-        "- What happens next or what readers should watch\n\n"
+        "Write a detailed, insightful article of 2000-3000 characters (5-7 paragraphs) with:\n"
+        "- Original analysis: Go beyond the summary. Offer original insights, perspective, or deeper understanding.\n"
+        "- Why this matters: Explain real-world implications and relevance to readers.\n"
+        "- Humanized tone: Write conversationally, with personality. Avoid generic statements like 'this is significant' or 'experts say'.\n"
+        "- Specific details: Use real numbers, names, quotes, and context that bring the story to life.\n"
+        "- What's next: Anticipate follow-up developments and what readers should watch for.\n\n"
+        "DO NOT use generic filler language. Every sentence should add unique value.\n\n"
         "Respond with ONLY this JSON, no markdown, no explanation:\n"
         '{"title":"compelling headline under 90 chars","summary":"2 sentence summary","body":"<p>paragraph 1</p><p>paragraph 2</p><p>paragraph 3</p><p>paragraph 4</p><p>paragraph 5</p>","image_query":"3 specific keywords describing the visual scene of this story"}'
     )
